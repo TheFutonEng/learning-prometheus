@@ -1,14 +1,9 @@
 #cloud-config
 users:
   - default
-  - name: rmengert
-    gecos: rmengert
-    primary_group: rmengert
-    groups: users
-    lock_passwd: true  # Changed to true to disable password login
-    ssh_authorized_keys:
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC51kdtHYdsl0D6M5W/quVnmhttVOi+dtWgzSws2W8fph4scR8s58qJriqP7THZK2kCkpxPuKoOz2q54zvMwnweag21imY1pyz60egsX4eIKnnlYjrxDKVKngr4ueGemPcS/IMjZL53zxmOCwnz8eqGMeVUM374+wQ3XWmYdGwpUsalDaGc1w7fCDWD/PX9PxaD09+cfGW4MgrH/hueT+5LZc4I943QyLhJ+6Lip6rx/sM1kFD/XaP+we8959McqPdjb3g1w+UthNVLgderYVfR6AaH0pZdUcsCT4jCyKQZ5EnWsv+2hSaUc6imZF8KG/oBEYEPi4JAZA9By3isdn6uAhv2IpHKDVwB6WCrXjwGoexyLUNGRzsk7WPWvRerEC+xQJn5WHZ0Jz7LzVfvyxOh6ZUXoDR2J0W57Y+NIJp1SA+oyKNSoopdcB0aU6ozZYTGpWXktVwA+ygPXw+9nm8t+Jkr3ZtaPCt+2+JgX5r13PCHKAa4aw6Sr1BrYWYyOyS2GPVgw4gbPAd4HE6qjzO4R0iEm2qW9H31YGexQf5wrnYxr8JpDfQ3CIV3oZ5zzeBtyKxaYjowWjDzI4PS/FFiRkKoiFoduN/5Ly8FxauCe0SWIyoqa0VQRF4ZxrmprrcGPJ3HsSGkKUR3zLhT2oKDaqeDbKgQPX9/734GeIrvcQ==
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQChwl+rRfr05dQqCdEwg/mxGSDZ3T2B4zKAUtj3PTvRUMKJC7LJsiVepRbHTSDVsaeszpgcVliU7+5aeEx4qx06WWtSFhoTt46/q3+UNwJ5gjgXWa4glAHi62O6rB/EUdbqud6HWfOHWDHkNWEIDtofppn9joZW1hgjsdOiMB+O84R5i1wTSSlkP7LSWy0P+8wFAEd5YmKBvMAiPtni0hrRERQkuv6NhB0E1yMh8v02k3Zk5KtnrtgXg9QzO0BPcU/FRdBPs7KJj0uiJD7PpJNYpaxSG2lkVJk+dTXvuOi/tJQpvh8Lk8RPXfuDF425kuFHql4GGphPmD+BvzbZTcr3
-    sudo:
-    - ALL=(ALL) NOPASSWD:ALL
+  - name: ubuntu
+    gecos: ubuntu
     shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/u/GcNQ/TdC5CFR0YSlrFvC7suPXS5IXfCAiRzYDXX prometheus@local
