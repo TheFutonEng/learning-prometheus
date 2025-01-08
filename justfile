@@ -478,6 +478,44 @@ setup-alerts:
     echo "Verifying alert rules..."
     ssh {{ssh_opts}} $VM_IP "curl -s localhost:9090/api/v1/rules | jq '.'"
 
+# Install stress-ng and trigger CPU load
+stress-cpu:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "Installing stress-ng..."
+    ssh {{ssh_opts}} $VM_IP "sudo apt-get update -qq && sudo apt-get install -y stress-ng > /dev/null 2>&1"
+
+    echo "Starting CPU stress test..."
+    echo "   - Duration: 10 minutes"
+    echo "   - CPU Load: 30 workers"
+    ssh {{ssh_opts}} $VM_IP "nohup sudo stress-ng --cpu 2 --cpu-load 30 --timeout 10m > /dev/null 2>&1 &"
+
+    echo "Monitoring alert status..."
+    echo "   Waiting for alert to trigger (this may take ~5 minutes)..."
+    echo "   Check alert status with: just check-alerts"
+
+# Monitor CPU usage
+monitor-cpu:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    ssh {{ssh_opts}} $VM_IP "top -b -n 1 | head -n 3"
+
+# Check if stress-ng is running
+check-stress:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "Checking stress-ng processes:"
+    ssh {{ssh_opts}} $VM_IP "ps aux | grep stress-ng | grep -v grep || echo 'No stress-ng processes found'"
+
+# Kill stress-ng processes
+stop-stress:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "Stopping stress-ng processes..."
+    ssh {{ssh_opts}} $VM_IP "sudo pkill stress-ng || true"
+    echo "Checking for remaining processes..."
+    just check-stress
+
 # Delete vm and delete LXC profile
 cleanup: delete-vm delete-profile
 
