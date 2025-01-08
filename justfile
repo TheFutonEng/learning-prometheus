@@ -516,6 +516,16 @@ stop-stress:
     echo "Checking for remaining processes..."
     just check-stress
 
+# Monitor alert status with more detail
+monitor-alert:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "Checking HighCPUUsage alert status..."
+    echo "Current CPU Usage:"
+    ssh {{ssh_opts}} $VM_IP 'curl -s "localhost:9090/api/v1/query?query=100%20-%20(avg%20by(instance)%20(rate(node_cpu_seconds_total%7Bmode%3D%22idle%22%7D%5B2m%5D))%20*%20100)" | jq ".data.result[0].value[1]"'
+    echo "Alert Status:"
+    ssh {{ssh_opts}} $VM_IP 'curl -s localhost:9090/api/v1/alerts | jq ".data.alerts[] | select(.labels.alertname == \"HighCPUUsage\") | {state, activeAt, value: .value}"'
+
 # Delete vm and delete LXC profile
 cleanup: delete-vm delete-profile
 
