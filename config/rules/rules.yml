@@ -1,0 +1,11 @@
+# Example alert rule structure
+groups:
+- name: example
+  rules:
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 20
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: High CPU usage on {{ $labels.instance }}

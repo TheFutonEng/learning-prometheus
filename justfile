@@ -7,6 +7,7 @@ vm_memory := "4GB"
 prom_version := "2.49.1"  # Latest stable as of now
 node_exporter_version := "1.7.0"
 prom_dir := "/opt/prometheus"
+rules_dir := "config/rules"
 ssh_opts := "-q -l ubuntu -i .ssh/prometheus_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 scp_opts := "-q -i .ssh/prometheus_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
@@ -135,6 +136,7 @@ install-prometheus:
     ssh {{ssh_opts}} $VM_IP "sudo apt-get update >/dev/null 2>&1 && sudo apt-get install -y wget tar >/dev/null 2>&1" && \
     ssh {{ssh_opts}} $VM_IP "wget -q https://github.com/prometheus/prometheus/releases/download/v{{prom_version}}/prometheus-{{prom_version}}.linux-amd64.tar.gz" && \
     ssh {{ssh_opts}} $VM_IP "sudo mkdir -p {{prom_dir}} && sudo tar xzf prometheus-{{prom_version}}.linux-amd64.tar.gz -C {{prom_dir}} --strip-components=1" && \
+    ssh {{ssh_opts}} $VM_IP "sudo mkdir -p {{prom_dir}}/rules" && \
     ssh {{ssh_opts}} $VM_IP "sudo useradd -rs /bin/false prometheus || true" && \
     ssh {{ssh_opts}} $VM_IP "sudo chown -R prometheus:prometheus {{prom_dir}}" && \
     echo "Prometheus installed in {{prom_dir}}"
@@ -459,6 +461,22 @@ remove-node-exporter:
     else
         echo "✓ Port 9100 is free"
     fi
+
+# Setup alert rules
+setup-alerts:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+
+    # Upload rules file
+    echo "Uploading rules..."
+    scp {{scp_opts}} {{rules_dir}}/rules.yml ubuntu@$VM_IP:/tmp/rules.yml
+    ssh {{ssh_opts}} $VM_IP "sudo mv /tmp/rules.yml {{prom_dir}}/rules/ && sudo chown prometheus:prometheus {{prom_dir}}/rules/rules.yml"
+
+    echo "Validating and reloading configuration..."
+    just reload-prometheus
+
+    echo "Verifying alert rules..."
+    ssh {{ssh_opts}} $VM_IP "curl -s localhost:9090/api/v1/rules | jq '.'"
 
 # Delete vm and delete LXC profile
 cleanup: delete-vm delete-profile
