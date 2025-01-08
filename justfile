@@ -5,6 +5,7 @@ vm_name := "prometheus"
 vm_cpu := "2"
 vm_memory := "4GB"
 prom_version := "2.49.1"  # Latest stable as of now
+node_exporter_version := "1.7.0"
 prom_dir := "/opt/prometheus"
 ssh_opts := "-q -l ubuntu -i .ssh/prometheus_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 scp_opts := "-q -i .ssh/prometheus_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
@@ -147,6 +148,14 @@ setup-config:
     ssh {{ssh_opts}} $VM_IP 'sudo mv /tmp/prometheus.yml {{prom_dir}}/prometheus.yml' && \
     ssh {{ssh_opts}} $VM_IP 'sudo chown prometheus:prometheus {{prom_dir}}/prometheus.yml'
 
+# Upload and setup Prometheus config
+setup-node-config:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    scp {{scp_opts}} config/node-prometheus.yml "ubuntu@$VM_IP:/tmp/prometheus.yml" >/dev/null && \
+    ssh {{ssh_opts}} $VM_IP 'sudo mv /tmp/prometheus.yml {{prom_dir}}/prometheus.yml' && \
+    ssh {{ssh_opts}} $VM_IP 'sudo chown prometheus:prometheus {{prom_dir}}/prometheus.yml'
+
 # Start the Prometheus server
 start-prometheus:
     #!/usr/bin/env bash
@@ -162,11 +171,71 @@ start-prometheus:
 
 # Show Prometheus status
 prom-status:
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
     ssh {{ssh_opts}} $VM_IP "sudo systemctl status prometheus"
 
 # Show Prometheus logs
 prom-logs:
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
     ssh {{ssh_opts}} $VM_IP "sudo journalctl -u prometheus -f"
+
+# Debug Prometheus configuration and logs
+debug-prometheus:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "1. Current Prometheus configuration:"
+    ssh {{ssh_opts}} $VM_IP "cat {{prom_dir}}/prometheus.yml"
+    echo -e "\n2. Last 10 lines of Prometheus logs:"
+    ssh {{ssh_opts}} $VM_IP "sudo journalctl -u prometheus -n 10 --no-pager"
+    echo -e "\n3. Checking Prometheus API targets:"
+    ssh {{ssh_opts}} $VM_IP "curl -s localhost:9090/api/v1/targets | jq '.'"
+
+# Install debug tools and restart Prometheus
+fix-prometheus:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "1. Installing jq..."
+    ssh {{ssh_opts}} $VM_IP "sudo apt-get update -qq && sudo apt-get install -y jq >/dev/null 2>&1"
+
+    echo "2. Restarting Prometheus..."
+    ssh {{ssh_opts}} $VM_IP "sudo systemctl restart prometheus"
+    echo "Waiting for Prometheus to start..."
+    sleep 5
+
+    echo "3. Checking targets status:"
+    ssh {{ssh_opts}} $VM_IP 'curl -s localhost:9090/api/v1/targets | jq -r ".data.activeTargets[] | .labels.job + \": \" + .health"'
+
+# Reload Prometheus configuration with verification
+reload-prometheus:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "1. Validating configuration..."
+    if ! ssh {{ssh_opts}} $VM_IP "{{prom_dir}}/promtool check config {{prom_dir}}/prometheus.yml"; then
+        echo "Configuration check failed!"
+        exit 1
+    fi
+
+    echo "2. Restarting Prometheus to apply changes..."
+    ssh {{ssh_opts}} $VM_IP "sudo systemctl restart prometheus"
+
+    echo "3. Waiting for Prometheus to become ready..."
+    for i in {1..60}; do
+        if ssh {{ssh_opts}} $VM_IP "curl -s -f http://localhost:9090/-/ready > /dev/null"; then
+            echo "✓ Prometheus is ready"
+            break
+        fi
+        if [ $i -eq 60 ]; then
+            echo "! Timed out waiting for Prometheus to become ready"
+            exit 1
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    echo "4. Verifying configuration..."
+    sleep 5  # Give Prometheus a moment to attempt scrapes
+    ssh {{ssh_opts}} $VM_IP 'curl -s localhost:9090/api/v1/targets | jq -r ".data.activeTargets[] | \"Target: \" + .labels.job + \", State: \" + .health + \", Last Scrape: \" + .lastScrape"'
+
 
 # Delete VM if it exists
 delete-vm:
@@ -265,6 +334,131 @@ setup: cleanup setup-keys deploy-vm install-prometheus setup-config start-promet
         sleep 1
     done
     echo "! Warning: Prometheus is not responding. Check 'just prom-status' for details"
+
+# # Install and configure node_exporter
+# install-node-exporter:
+#     #!/usr/bin/env bash
+#     VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+#     echo "Installing node_exporter {{node_exporter_version}}..."
+#     # Download and install binary
+#     ssh {{ssh_opts}} $VM_IP "\
+#         wget -q https://github.com/prometheus/node_exporter/releases/download/v{{node_exporter_version}}/node_exporter-{{node_exporter_version}}.linux-amd64.tar.gz && \
+#         tar xzf node_exporter-*.tar.gz && \
+#         sudo mv node_exporter-*/node_exporter /usr/local/bin/ && \
+#         rm -rf node_exporter-* && \
+#         sudo useradd -rs /bin/false node_exporter || true"
+
+#     # Upload and enable service
+#     scp {{scp_opts}} templates/node_exporter.service "ubuntu@$VM_IP:/tmp/node_exporter.service" >/dev/null && \
+#     ssh {{ssh_opts}} {{vm_ip}} "\
+#         sudo mv /tmp/node_exporter.service /etc/systemd/system/ && \
+#         sudo systemctl daemon-reload && \
+#         sudo systemctl start node_exporter && \
+#         sudo systemctl enable node_exporter" && \
+#     echo "✓ Node Exporter installed and running on port 9100"
+
+# Install and configure node_exporter
+install-node-exporter:
+    #!/usr/bin/env bash
+    set -e
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    if [ -z "$VM_IP" ]; then
+        echo "Error: Could not determine VM IP address"
+        exit 1
+    fi
+    echo "Using VM IP: $VM_IP"
+
+    # Check if node_exporter is already installed and running
+    if ssh {{ssh_opts}} $VM_IP "systemctl is-active --quiet node_exporter"; then
+        echo "Node Exporter is already running"
+        exit 0
+    fi
+
+    echo "Installing node_exporter {{node_exporter_version}}..."
+
+    # Create user if doesn't exist
+    ssh {{ssh_opts}} $VM_IP "sudo useradd -rs /bin/false node_exporter || true"
+
+    # Only download and install if binary doesn't exist or version is different
+    if ! ssh {{ssh_opts}} $VM_IP "test -f /usr/local/bin/node_exporter && /usr/local/bin/node_exporter --version | grep '{{node_exporter_version}}'"; then
+        echo "Downloading and installing node_exporter binary..."
+        ssh {{ssh_opts}} $VM_IP "\
+            wget -q https://github.com/prometheus/node_exporter/releases/download/v{{node_exporter_version}}/node_exporter-{{node_exporter_version}}.linux-amd64.tar.gz && \
+            tar xzf node_exporter-*.tar.gz && \
+            sudo mv node_exporter-*/node_exporter /usr/local/bin/ && \
+            rm -rf node_exporter-*"
+    fi
+
+    # Upload and enable service
+    echo "Setting up systemd service..."
+    scp {{scp_opts}} templates/node_exporter.service "ubuntu@$VM_IP:/tmp/node_exporter.service" >/dev/null
+    ssh {{ssh_opts}} $VM_IP "\
+        sudo mv /tmp/node_exporter.service /etc/systemd/system/ && \
+        sudo systemctl daemon-reload && \
+        sudo systemctl start node_exporter && \
+        sudo systemctl enable node_exporter"
+
+    echo "✓ Node Exporter installed and running on port 9100"
+
+# Check node_exporter status
+node-exporter-status:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    ssh {{ssh_opts}} $VM_IP "sudo systemctl status node_exporter"
+
+# Show node_exporter metrics
+node-exporter-metrics:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    @ssh {{ssh_opts}} $VM_IP "curl -s localhost:9100/metrics | head -n 5"
+    @echo "..."
+    @echo "To see all metrics, run: ssh $VM_IP 'curl localhost:9100/metrics'"
+
+# Verify node_exporter is accessible
+verify-node-exporter:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "1. Checking node_exporter service status:"
+    ssh {{ssh_opts}} $VM_IP "sudo systemctl status node_exporter --no-pager"
+    echo -e "\n2. Testing node_exporter metrics endpoint:"
+    ssh {{ssh_opts}} $VM_IP "curl -s localhost:9100/metrics | head -n 1"
+    echo -e "\n3. Checking open ports:"
+    ssh {{ssh_opts}} $VM_IP "sudo ss -tlnp | grep 9100"
+
+configure-node-exporter: install-node-exporter setup-node-config reload-prometheus
+    #!/usr/bin/env bash
+    echo "Node exporter setup complete!"
+
+# Remove node_exporter and cleanup configurations
+remove-node-exporter:
+    #!/usr/bin/env bash
+    VM_IP=$(lxc list {{vm_name}} -f csv | grep enp | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+    echo "1. Stopping node_exporter service..."
+    ssh {{ssh_opts}} $VM_IP "sudo systemctl stop node_exporter || true"
+    ssh {{ssh_opts}} $VM_IP "sudo systemctl disable node_exporter || true"
+
+    echo "2. Removing node_exporter files..."
+    ssh {{ssh_opts}} $VM_IP "\
+        sudo rm -f /etc/systemd/system/node_exporter.service && \
+        sudo rm -f /usr/local/bin/node_exporter && \
+        sudo systemctl daemon-reload"
+
+    echo "3. Removing node_exporter user..."
+    ssh {{ssh_opts}} $VM_IP "sudo userdel -r node_exporter || true"
+
+    echo "4. Restoring original Prometheus config..."
+    just setup-config
+
+    echo "5. Restarting Prometheus with new configuration..."
+    just reload-prometheus
+
+    echo "6. Verifying cleanup..."
+    if ssh {{ssh_opts}} $VM_IP "ss -tlnp | grep 9100"; then
+        echo "! Warning: Port 9100 is still in use"
+        exit 1
+    else
+        echo "✓ Port 9100 is free"
+    fi
 
 # Delete vm and delete LXC profile
 cleanup: delete-vm delete-profile
