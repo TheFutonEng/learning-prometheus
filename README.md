@@ -1,6 +1,6 @@
 # Introduction
 
-Using this repo to learn all about [Prometheus](https://prometheus.io/docs/prometheus/latest/getting_started/).
+Using this repo to learn all about [Prometheus](https://prometheus.io/docs/prometheus/latest/getting_started/).  [This Medium article](https://rob-mengert.medium.com/learning-prometheus-90acc77e9559) leverages this repo.
 
 # Requirements
 
