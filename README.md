@@ -4,7 +4,7 @@ Using this repo to learn all about [Prometheus](https://prometheus.io/docs/prome
 
 # Requirements
 
-This repo was tested using the following tools. 
+This repo was tested using the following tools.
 
 - Ubuntu 22.04
 - `just` 1.36.0 ([installation](https://github.com/casey/just#installation))
@@ -43,7 +43,7 @@ Available recipes:
 Pass one of the targets in the first column to the `just` command in order to execute the described action:
 
 ```bash
-$ just vm-status 
+$ just vm-status
 lxc list prometheus
 +------------+---------+-----------------------+------------------------------------------------+-----------------+-----------+
 |    NAME    |  STATE  |         IPV4          |                      IPV6                      |      TYPE       | SNAPSHOTS |
@@ -54,24 +54,4 @@ lxc list prometheus
 
 # VM IP Address
 
-The `justfile` assumes a default IP address but this may not be suitable for your `lxc` setup.  To determine a suitable IP address, run the below `just` target:
-
-```bash
-$ just generate-ip 
-Suggested IP: 10.196.3.236
-To use this IP, run: export PROMETHEUS_VM_IP=10.196.3.236
-IP 10.196.3.236 appears to be available
-```
-
-# Accessing the Prometheus UI
-
-If the `lxc` VM is running on the same host as the workstation, the Prometheus UI will be accessible via the VM IP:
-
-- http://<<vm-ip>>:9090
-
-If the `lxc` VM is running on a different host and the LXD bridge interface (`lxdbro`) is not routed on the local network, run the `setup-proxy` target:
-
-```bash
-$ just setup-proxy 
-Device prometheus-ui added to prometheus
-```
+The Medium article that uses this repo assumes a bridged solution directory to the host and not using the default bridge that LXC creates.  That means that the VM will get DHCP is the attached network provides the service.  There are commented out `just` targets that can be used to spin up an LXC proxy if the LXC bridge connectivity is preferred.
